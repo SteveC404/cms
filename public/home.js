@@ -80,17 +80,18 @@ async function showDetailsModal(type, id) {
   }
   let thumbHtml = "";
   if (data.Photo) {
-    thumbHtml = `<div style='text-align:center;margin-bottom:12px;'><img src='/uploads/${data.Photo}' alt='photo' style='width:64px;height:64px;border-radius:50%;object-fit:cover;border:2px solid #ccc;'></div>`;
+    thumbHtml = `<div style='text-align:center;margin-bottom:12px;'><img id='photoThumb' src='/uploads/${data.Photo}' alt='photo' style='width:64px;height:64px;border-radius:50%;object-fit:cover;border:2px solid #ccc;cursor:pointer;' title='Change photo'></div>`;
   } else if (initials) {
-    thumbHtml = `<div style='width:64px;height:64px;border-radius:50%;background:#888;color:#fff;display:flex;align-items:center;justify-content:center;font-size:2em;font-weight:bold;margin:0 auto 12px auto;'>${initials}</div>`;
+    thumbHtml = `<div id='photoThumb' style='width:64px;height:64px;border-radius:50%;background:#888;color:#fff;display:flex;align-items:center;justify-content:center;font-size:2em;font-weight:bold;margin:0 auto 12px auto;cursor:pointer;' title='Change photo'>${initials}</div>`;
   } else {
-    thumbHtml = `<div style='width:64px;height:64px;border-radius:50%;background:#888;'></div>`;
+    thumbHtml = `<div id='photoThumb' style='width:64px;height:64px;border-radius:50%;background:#888;cursor:pointer;' title='Change photo'></div>`;
   }
   let html = `<div class="modal-content"><h3>${isNew ? "New" : ""} ${
     type.slice(0, -1).charAt(0).toUpperCase() + type.slice(1, -1)
   } Details</h3>`;
   html += thumbHtml;
   html += `<form id="detailsForm">`;
+  html += `<input type="file" id="photoInput" name="photo" style="display:none">`;
   for (const f of fields) {
     if (f === "Password" || f === "Password2") {
       html += `<input type="password" name="${f}" placeholder="${
@@ -124,7 +125,29 @@ async function showDetailsModal(type, id) {
       }" placeholder="${f}"><br>`;
     }
   }
-  html += `<label>Photo <input type="file" name="photo"></label><br>`;
+  // Remove default photo input
+  // Add click event to thumbnail to trigger file input
+  setTimeout(() => {
+    const thumb = document.getElementById("photoThumb");
+    const input = document.getElementById("photoInput");
+    if (thumb && input) {
+      thumb.addEventListener("click", () => input.click());
+      input.addEventListener("change", function () {
+        if (input.files && input.files[0]) {
+          const reader = new FileReader();
+          reader.onload = function (e) {
+            if (thumb.tagName === "IMG") {
+              thumb.src = e.target.result;
+            } else {
+              thumb.innerHTML = "";
+              thumb.style.background = `url('${e.target.result}') center/cover`;
+            }
+          };
+          reader.readAsDataURL(input.files[0]);
+        }
+      });
+    }
+  }, 0);
   html += `<button type="button" id="saveBtn">Save</button> <button type="button" id="closeBtn">Close</button>`;
   html += `<div id="detailsError" class="error"></div>`;
   html += `</form></div>`;
@@ -162,6 +185,11 @@ async function showDetailsModal(type, id) {
   // Save button logic
   document.getElementById("saveBtn").onclick = async function () {
     const formData = new FormData(form);
+    // If a new photo is selected, ensure it is included in FormData
+    const photoInput = document.getElementById("photoInput");
+    if (photoInput && photoInput.files && photoInput.files[0]) {
+      formData.set("photo", photoInput.files[0]);
+    }
     let endpoint = isNew ? `/api/${type}` : `/api/${type}/${id}`;
     let errorDiv = document.getElementById("detailsError");
     errorDiv.innerText = "";
@@ -185,6 +213,13 @@ async function showDetailsModal(type, id) {
       }, 3000);
       closeModal();
       renderTab(type);
+      // If user updated their own profile, refresh header
+      if (type === "users" && !isNew) {
+        const user = await getProfile();
+        if (user.Id === id) {
+          renderHeader();
+        }
+      }
     } catch (err) {
       errorDiv.innerText = "Network error. Please try again.";
     }
