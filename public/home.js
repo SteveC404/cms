@@ -1,5 +1,3 @@
-// public/home.js
-
 // ---------- helpers ----------
 async function fetchJSON(url, opts = {}) {
   const res = await fetch(url, opts);
@@ -82,7 +80,7 @@ async function renderHeader() {
     // Start a delayed close when leaving
     const startCloseTimer = () => {
       clearTimeout(closeTimer);
-      closeTimer = setTimeout(closeMenu, 1000); // <-- 1 second delay
+      closeTimer = setTimeout(closeMenu, 1000); // 1 second delay
     };
 
     // Cancel delayed close if entering again
@@ -370,9 +368,8 @@ async function showDetailsModal(type, id) {
 
   // close
   $("#closeBtn").addEventListener("click", () => {
-    if (dirty && !confirm("You have unsaved changes. Close without saving?")) {
+    if (dirty && !confirm("You have unsaved changes. Close without saving?"))
       return;
-    }
     closeModal();
   });
 }
@@ -380,23 +377,6 @@ async function showDetailsModal(type, id) {
 function closeModal() {
   $("#detailsModal").style.display = "none";
 }
-
-// ---------- tabs ----------
-$all(".tab").forEach((btn) => {
-  btn.addEventListener("click", () => {
-    $all(".tab").forEach((b) => b.classList.remove("active"));
-    btn.classList.add("active");
-    renderTab(btn.dataset.tab);
-  });
-});
-
-// default tab
-(async () => {
-  await renderHeader();
-  const first = $(".tab");
-  if (first) first.classList.add("active");
-  await renderTab("clients");
-})();
 
 // ---------- delegated clicks (CSP-safe) ----------
 document.addEventListener("click", (e) => {
@@ -416,4 +396,37 @@ document.addEventListener("click", (e) => {
     if (type) showDetailsModal(type, "new");
     return;
   }
+});
+
+// ---------- sidebar wiring (collapse + nav) & initial render ----------
+document.addEventListener("DOMContentLoaded", async () => {
+  const sidebar = document.getElementById("sidebar");
+  const toggle = document.getElementById("sidebarToggle");
+  const navItems = Array.from(document.querySelectorAll(".nav-item"));
+  const pageTitle = document.getElementById("pageTitle");
+
+  if (toggle) {
+    toggle.addEventListener("click", () => {
+      sidebar.classList.toggle("collapsed");
+    });
+  }
+
+  navItems.forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      navItems.forEach((b) => b.classList.remove("active"));
+      btn.classList.add("active");
+
+      const tab = btn.dataset.tab; // "clients" | "users"
+      if (pageTitle)
+        pageTitle.textContent = tab.charAt(0).toUpperCase() + tab.slice(1);
+      await renderTab(tab);
+    });
+  });
+
+  // Default to Clients via sidebar
+  const defaultBtn = document.querySelector('.nav-item[data-tab="clients"]');
+  if (defaultBtn) defaultBtn.click();
+
+  // Render header once
+  await renderHeader();
 });

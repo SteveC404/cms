@@ -1,265 +1,268 @@
+// src/controllers/usersController.js
+"use strict";
+
 const bcrypt = require("bcrypt");
 const mssql = require("mssql");
 const { getPool } = require("../config/db");
 const { logAudit } = require("../utils/audit");
 
-function toBit(v) {
-  if (typeof v === "boolean") return v ? 1 : 0;
-  const s = String(v ?? "").toLowerCase();
-  return s === "true" || s === "on" || s === "1" ? 1 : 0;
+/* helpers */
+function bitFrom(input) {
+  if (typeof input === "boolean") return input ? 1 : 0;
+  const s = String(input ?? "")
+    .trim()
+    .toLowerCase();
+  return s === "true" || s === "on" || s === "1" || s === "yes" || s === "y"
+    ? 1
+    : 0;
 }
-function normalizeBit(x) {
-  if (typeof x === "boolean") return x ? 1 : 0;
-  return x == null ? 0 : Number(x);
+function hasOwn(obj, key) {
+  return Object.prototype.hasOwnProperty.call(obj || {}, key);
+}
+function normStr(v) {
+  return v == null ? null : String(v);
 }
 
-/** GET /api/users → array for UI */
+/** GET /api/users */
 async function listUsers(req, res) {
   const pool = await getPool();
-  const page = Math.max(1, parseInt(req.query.page || "1", 10));
-  const pageSize = Math.min(
-    100,
-    Math.max(1, parseInt(req.query.pageSize || "100", 10)),
-  );
-  const q = (req.query.q || "").trim();
+  const tenantId = req.session?.user?.tenantId;
 
-  let where = "WHERE 1=1";
-  const request = pool
-    .request()
-    .input("offset", mssql.Int, (page - 1) * pageSize)
-    .input("limit", mssql.Int, pageSize);
-
-  if (q) {
-    where += " AND (FirstName LIKE @q OR LastName LIKE @q OR Email LIKE @q)";
-    request.input("q", mssql.NVarChar, `%${q}%`);
-  }
-
-  const sql = `
-    SELECT Id, FirstName, LastName, Email, Active
-    FROM Users
-    ${where}
-    ORDER BY Id DESC
-    OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY;
-  `;
-  const result = await request.query(sql);
-  return res.json(result.recordset || []);
+  const rs = await pool.request().input("TenantId", mssql.Char, tenantId)
+    .query(`
+      SELECT Id, FirstName, LastName, Email, Photo, Active, Comments,
+             CreatedBy, CreatedDate, UpdatedBy, UpdatedDate, TenantId, TenantUserId
+        FROM Users
+       WHERE TenantId = @TenantId
+       ORDER BY Id DESC
+    `);
+  res.json(rs.recordset || []);
 }
 
 /** GET /api/users/:id */
 async function getUser(req, res) {
+  const pool = await getPool();
+  const tenantId = req.session?.user?.tenantId;
   const id = Number(req.params.id);
-  const pool = await getPool();
-  const result = await pool.request().input("id", mssql.Int, id).query(`
-      SELECT Id, FirstName, LastName, Email, Active, Comments, Photo, CreatedDate, UpdatedDate
-      FROM Users
-      WHERE Id = @id
-    `);
-  const user = result.recordset[0];
-  if (!user) return res.status(404).json({ error: "User not found" });
-  res.json(user);
-}
 
-/** POST /api/users */
-/** POST /api/users */
-async function createUser(req, res) {
-  const body = req.body || {};
-  const Email = body.Email ?? body.email;
-  const Password = body.Password ?? body.password;
-  const { FirstName, LastName, Active, Comments } = req.body || {};
-
-  if (!Email || !Password)
-    return res.status(400).json({ error: "Email and Password required" });
-
-  const pool = await getPool();
-
-  // unique email
-  const exists = await pool
-    .request()
-    .input("email", mssql.NVarChar, Email)
-    .query("SELECT TOP 1 Id FROM Users WHERE Email = @email");
-  if (exists.recordset[0])
-    return res.status(409).json({ error: "Email already in use" });
-
-  const hash = await bcrypt.hash(Password, 10);
-  const now = new Date();
-  const createdBy = req.session?.user?.email || "system";
-
-  const inserted = await pool
-    .request()
-    .input("FirstName", mssql.NVarChar, FirstName || null)
-    .input("LastName", mssql.NVarChar, LastName || null)
-    .input("Email", mssql.NVarChar, Email)
-    .input("Password", mssql.NVarChar, hash)
-    .input(
-      "Active",
-      mssql.Bit,
-      Active === true || Active === "true" || Active === "on" ? 1 : 0,
-    )
-    .input("Comments", mssql.NVarChar, Comments || null)
-    .input("CreatedBy", mssql.NVarChar, createdBy)
-    .input("CreatedDate", mssql.DateTime, now).query(`
-      INSERT INTO Users (FirstName, LastName, Email, Password, Active, Comments, CreatedBy, CreatedDate)
-      OUTPUT INSERTED.Id, INSERTED.CreatedBy, INSERTED.CreatedDate
-      VALUES (@FirstName, @LastName, @Email, @Password, @Active, @Comments, @CreatedBy, @CreatedDate)
-    `);
-
-  const row = inserted.recordset[0];
-  const newId = row.Id;
-
-  // Build the exact values entered to include in the audit (mask password)
-  const auditPayload = {
-    FirstName: FirstName || null,
-    LastName: LastName || null,
-    Email,
-    Active: Active === true || Active === "true" || Active === "on" ? 1 : 0,
-    Comments: Comments || null,
-    Password: "***", // never store real password
-  };
-
-  await logAudit({
-    userId: req.session?.user?.id ?? null,
-    tableName: "Users",
-    recordId: newId,
-    actionType: "CREATE",
-    updatedValue: JSON.stringify(auditPayload),
-  });
-
-  res.status(201).json({
-    id: newId,
-    createdBy: row.CreatedBy,
-    createdDate: row.CreatedDate,
-  });
-}
-
-/** PUT /api/users/:id — updates with diff auditing */
-async function updateUser(req, res) {
-  const id = Number(req.params.id);
-  const body = req.body || {};
-  const photo = req.file ? req.file.filename : null;
-  const now = new Date();
-
-  const pool = await getPool();
-
-  // Load existing
-  const prevRes = await pool.request().input("Id", mssql.Int, id).query(`
-      SELECT Id, FirstName, LastName, Email, Active, Comments, Photo
-      FROM Users
-      WHERE Id = @Id
-    `);
-  const prev = prevRes.recordset[0];
-  if (!prev) return res.status(404).json({ error: "User not found" });
-
-  prev.Active = normalizeBit(prev.Active);
-
-  // Next values (multipart FormData is now parsed by Multer on the route)
-  const next = {
-    FirstName: body.FirstName ?? prev.FirstName,
-    LastName: body.LastName ?? prev.LastName,
-    Email: body.Email ?? prev.Email,
-    Active: body.Active != null ? toBit(body.Active) : prev.Active,
-    Comments: body.Comments ?? prev.Comments,
-    Photo: photo ? photo : prev.Photo,
-  };
-
-  // Diff
-  const changedOld = {};
-  const changedNew = {};
-  for (const k of [
-    "FirstName",
-    "LastName",
-    "Email",
-    "Active",
-    "Comments",
-    "Photo",
-  ]) {
-    let a = prev[k];
-    let b = next[k];
-    if (k === "Active") {
-      a = normalizeBit(a);
-      b = normalizeBit(b);
-    }
-    if (String(a ?? "") !== String(b ?? "")) {
-      changedOld[k] = k === "Active" ? normalizeBit(prev[k]) : prev[k];
-      changedNew[k] = k === "Active" ? normalizeBit(next[k]) : next[k];
-    }
-  }
-
-  if (Object.keys(changedNew).length === 0) {
-    // nothing to do; still OK
-    return res.json({ success: true, changed: 0 });
-  }
-
-  // Update DB
-  const rq = pool
+  const rs = await pool
     .request()
     .input("Id", mssql.Int, id)
-    .input("FirstName", mssql.NVarChar, next.FirstName)
-    .input("LastName", mssql.NVarChar, next.LastName)
-    .input("Email", mssql.NVarChar, next.Email)
-    .input("Active", mssql.Bit, next.Active)
-    .input("Comments", mssql.NVarChar, next.Comments)
-    .input("UpdatedBy", mssql.NVarChar, req.session?.user?.email || "system")
-    .input("UpdatedDate", mssql.DateTime, now);
+    .input("TenantId", mssql.Char, tenantId)
+    .query(`SELECT * FROM Users WHERE Id=@Id AND TenantId=@TenantId`);
 
-  let setSql = `
-    FirstName=@FirstName,
-    LastName=@LastName,
-    Email=@Email,
-    Active=@Active,
-    Comments=@Comments,
-    UpdatedBy=@UpdatedBy,
-    UpdatedDate=@UpdatedDate
-  `;
-  if (photo) {
-    rq.input("Photo", mssql.NVarChar, next.Photo);
-    setSql += `, Photo=@Photo`;
-  }
+  const row = rs.recordset[0];
+  if (!row) return res.status(404).json({ error: "User not found" });
+  res.json(row);
+}
 
-  await rq.query(`UPDATE Users SET ${setSql} WHERE Id=@Id`);
+/** POST /api/users */
+async function createUser(req, res) {
+  const pool = await getPool();
+  const tenantId = req.session?.user?.tenantId;
+  const createdBy = req.session?.user?.tenantUserId || "system";
+  const now = new Date();
 
-  // Audit diffs
+  const {
+    FirstName,
+    LastName,
+    Email,
+    Comments,
+    Password,
+    Active,
+    Photo: PhotoBody,
+  } = req.body || {};
+
+  const activeBit = bitFrom(
+    hasOwn(req.body, "Active")
+      ? Active
+      : hasOwn(req.body, "active")
+        ? req.body.active
+        : 0,
+  );
+  const photoPath = req.file
+    ? `/uploads/${req.file.filename}`
+    : PhotoBody || null;
+  const hash = Password ? await bcrypt.hash(Password, 10) : null;
+
+  const ins = await pool
+    .request()
+    .input("TenantId", mssql.Char, tenantId)
+    .input("FirstName", mssql.NVarChar, FirstName || null)
+    .input("LastName", mssql.NVarChar, LastName || null)
+    .input("Email", mssql.NVarChar, Email || null)
+    .input("Photo", mssql.NVarChar, photoPath)
+    .input("Active", mssql.Bit, activeBit)
+    .input("Comments", mssql.NVarChar, Comments || null)
+    .input("Password", mssql.NVarChar, hash)
+    .input("CreatedBy", mssql.NVarChar, createdBy)
+    .input("CreatedDate", mssql.DateTime, now).query(`
+      INSERT INTO Users (
+        TenantId, FirstName, LastName, Email, Photo, Active, Comments, Password,
+        CreatedBy, CreatedDate
+      )
+      OUTPUT INSERTED.Id AS NewId
+      VALUES (
+        @TenantId, @FirstName, @LastName, @Email, @Photo, @Active, @Comments, @Password,
+        @CreatedBy, @CreatedDate
+      )
+    `);
+
+  const newId = ins.recordset[0].NewId;
+
+  // Generate TenantUserId: TenantId:8-hex (unique)
+  const cu = await pool.request().input("Id", mssql.Int, newId).query(`
+      UPDATE Users
+         SET TenantUserId = CONCAT(TenantId, ':',
+             LOWER(RIGHT(CONVERT(VARCHAR(8), CONVERT(VARBINARY(4), CRYPT_GEN_RANDOM(4)), 2), 8)))
+       WHERE Id = @Id;
+      SELECT TenantUserId FROM Users WHERE Id=@Id;
+    `);
+
+  const newTenantUserId = cu.recordset[0].TenantUserId;
+
   await logAudit({
     userId: req.session?.user?.id ?? null,
     tableName: "Users",
-    recordId: id,
-    actionType: "UPDATE",
-    existingValue: JSON.stringify(changedOld),
-    updatedValue: JSON.stringify(changedNew),
+    actionType: "CREATE",
+    updatedValue: { FirstName, LastName, Email, Active: activeBit, Comments },
+    tenantId,
+    tenantUserId: req.session?.user?.tenantUserId ?? null,
   });
 
-  res.json({ success: true, changed: Object.keys(changedNew).length });
+  res.status(201).json({ id: newId, tenantUserId: newTenantUserId });
 }
 
-/** PATCH /api/users/:id/password */
-async function changePassword(req, res) {
-  const id = Number(req.params.id);
-  const { Password, Password2 } = req.body || {};
-  if (!Password) return res.status(400).json({ error: "Password required" });
-  if (Password !== Password2)
-    return res.status(400).json({ error: "Passwords do not match" });
-
-  const hash = await bcrypt.hash(Password, 10);
-  const now = new Date();
+/** PUT/PATCH /api/users/:id */
+async function updateUser(req, res) {
   const pool = await getPool();
+  const tenantId = req.session?.user?.tenantId;
+  const updatedBy = req.session?.user?.tenantUserId || "system";
+  const now = new Date();
+  const id = Number(req.params.id);
 
+  // Load existing
+  const exRs = await pool
+    .request()
+    .input("Id", mssql.Int, id)
+    .input("TenantId", mssql.Char, tenantId)
+    .query(`SELECT TOP 1 * FROM Users WHERE Id=@Id AND TenantId=@TenantId`);
+  const existing = exRs.recordset[0];
+  if (!existing) return res.status(404).json({ error: "User not found" });
+
+  const {
+    FirstName,
+    LastName,
+    Email,
+    Comments,
+    Password,
+    Active,
+    Photo: PhotoBody,
+  } = req.body || {};
+
+  const hasActive = hasOwn(req.body, "Active") || hasOwn(req.body, "active");
+  const activeBit = hasActive
+    ? bitFrom(req.body.Active ?? req.body.active)
+    : null;
+  const photoPath = req.file
+    ? `/uploads/${req.file.filename}`
+    : hasOwn(req.body, "Photo")
+      ? PhotoBody || null
+      : null;
+  const hash = Password ? await bcrypt.hash(Password, 10) : null;
+
+  // compute diffs
+  const changed = {};
+  if (hasOwn(req.body, "FirstName")) {
+    const v = normStr(FirstName);
+    if (v !== normStr(existing.FirstName)) changed.FirstName = v;
+  }
+  if (hasOwn(req.body, "LastName")) {
+    const v = normStr(LastName);
+    if (v !== normStr(existing.LastName)) changed.LastName = v;
+  }
+  if (hasOwn(req.body, "Email")) {
+    const v = normStr(Email);
+    if (v !== normStr(existing.Email)) changed.Email = v;
+  }
+  if (hasOwn(req.body, "Comments")) {
+    const v = normStr(Comments);
+    if (v !== normStr(existing.Comments)) changed.Comments = v;
+  }
+  if (photoPath !== null && photoPath !== undefined) {
+    const v = normStr(photoPath);
+    if (v !== normStr(existing.Photo)) changed.Photo = v;
+  }
+  if (hasActive) {
+    const oldBit = existing.Active ? 1 : 0;
+    if (activeBit !== oldBit) changed.Active = activeBit;
+  }
+
+  const existingPayload = {
+    FirstName: existing.FirstName,
+    LastName: existing.LastName,
+    Email: existing.Email,
+  };
+  for (const k of Object.keys(changed)) {
+    if (k === "FirstName" || k === "LastName" || k === "Email") continue;
+    existingPayload[k] = existing[k];
+  }
+  const updatedPayload = {};
+  for (const k of Object.keys(changed)) updatedPayload[k] = changed[k];
+
+  // update
+  const sql = `
+    UPDATE Users SET
+      FirstName   = COALESCE(@FirstName, FirstName),
+      LastName    = COALESCE(@LastName, LastName),
+      Email       = COALESCE(@Email, Email),
+      Photo       = COALESCE(@Photo, Photo),
+      Active      = COALESCE(@Active, Active),
+      Comments    = COALESCE(@Comments, Comments),
+      Password    = CASE WHEN @Password IS NULL THEN Password ELSE @Password END,
+      UpdatedBy   = @UpdatedBy,
+      UpdatedDate = @UpdatedDate
+    WHERE Id=@Id AND TenantId=@TenantId
+  `;
   await pool
     .request()
     .input("Id", mssql.Int, id)
-    .input("Password", mssql.NVarChar, hash)
-    .input("UpdatedBy", mssql.NVarChar, req.session?.user?.email || "system")
-    .input("UpdatedDate", mssql.DateTime, now).query(`
-      UPDATE Users
-      SET Password=@Password, UpdatedBy=@UpdatedBy, UpdatedDate=@UpdatedDate
-      WHERE Id=@Id
-    `);
+    .input("TenantId", mssql.Char, tenantId)
+    .input(
+      "FirstName",
+      mssql.NVarChar,
+      hasOwn(req.body, "FirstName") ? (FirstName ?? null) : null,
+    )
+    .input(
+      "LastName",
+      mssql.NVarChar,
+      hasOwn(req.body, "LastName") ? (LastName ?? null) : null,
+    )
+    .input(
+      "Email",
+      mssql.NVarChar,
+      hasOwn(req.body, "Email") ? (Email ?? null) : null,
+    )
+    .input("Photo", mssql.NVarChar, photoPath ?? null)
+    .input("Active", mssql.Bit, hasActive ? activeBit : null)
+    .input(
+      "Comments",
+      mssql.NVarChar,
+      hasOwn(req.body, "Comments") ? (Comments ?? null) : null,
+    )
+    .input("Password", mssql.NVarChar, hash ?? null)
+    .input("UpdatedBy", mssql.NVarChar, updatedBy)
+    .input("UpdatedDate", mssql.DateTime, now)
+    .query(sql);
 
   await logAudit({
-    userId: req.session?.user?.id,
+    userId: req.session?.user?.id ?? null,
     tableName: "Users",
-    recordId: id,
-    actionType: "PASSWORD_CHANGE",
-    existingValue: JSON.stringify({ Password: "***" }),
-    updatedValue: JSON.stringify({ Password: "***" }),
+    actionType: "UPDATE",
+    existingValue: existingPayload,
+    updatedValue: updatedPayload,
+    tenantId,
+    tenantUserId: req.session?.user?.tenantUserId ?? null,
   });
 
   res.json({ success: true });
@@ -267,43 +270,44 @@ async function changePassword(req, res) {
 
 /** DELETE /api/users/:id */
 async function removeUser(req, res) {
-  const id = Number(req.params.id);
   const pool = await getPool();
+  const tenantId = req.session?.user?.tenantId;
+  const id = Number(req.params.id);
+
   await pool
     .request()
     .input("Id", mssql.Int, id)
-    .query("DELETE FROM Users WHERE Id=@Id");
+    .input("TenantId", mssql.Char, tenantId)
+    .query(`DELETE FROM Users WHERE Id=@Id AND TenantId=@TenantId`);
 
   await logAudit({
-    userId: req.session?.user?.id,
+    userId: req.session?.user?.id ?? null,
     tableName: "Users",
-    recordId: id,
     actionType: "DELETE",
+    updatedValue: { id },
+    tenantId,
+    tenantUserId: req.session?.user?.tenantUserId ?? null,
   });
+
   res.json({ success: true });
 }
 
 /** GET /api/users/me */
 async function me(req, res) {
-  const id = req.session?.user?.id;
-  if (!id) return res.status(401).json({ error: "Unauthorized" });
   const pool = await getPool();
-  const result = await pool.request().input("id", mssql.Int, id).query(`
-      SELECT Id, FirstName, LastName, Email, Active, Comments, Photo, CreatedDate, UpdatedDate
-      FROM Users
-      WHERE Id=@id
-    `);
-  const user = result.recordset[0];
-  if (!user) return res.status(404).json({ error: "User not found" });
-  res.json(user);
+  const id = req.session?.user?.id;
+  const tenantId = req.session?.user?.tenantId;
+  if (!id || !tenantId) return res.status(401).json({ error: "Unauthorized" });
+
+  const rs = await pool
+    .request()
+    .input("Id", mssql.Int, id)
+    .input("TenantId", mssql.Char, tenantId)
+    .query(`SELECT * FROM Users WHERE Id=@Id AND TenantId=@TenantId`);
+
+  const row = rs.recordset[0];
+  if (!row) return res.status(404).json({ error: "User not found" });
+  res.json(row);
 }
 
-module.exports = {
-  listUsers,
-  getUser,
-  createUser,
-  updateUser,
-  changePassword,
-  removeUser,
-  me,
-};
+module.exports = { listUsers, getUser, createUser, updateUser, removeUser, me };

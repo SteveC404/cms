@@ -8,15 +8,19 @@ FROM sys.objects
 WHERE object_id = OBJECT_ID(N'[dbo].[Audit]') AND type = N'U'
 )
 BEGIN
-  CREATE TABLE [dbo].[Audit]
+  CREATE TABLE ClientManagement.dbo.Audit
   (
-    [Id] BIGINT IDENTITY(1,1) NOT NULL PRIMARY KEY,
-    [UserId] INT NULL,
-    [TableName] NVARCHAR(128) NULL,
-    [RecordId] BIGINT NULL,
-    [ActionType] NVARCHAR(64) NULL,
-    [ExistingValue] NVARCHAR(MAX) NULL,
-    [UpdatedValue] NVARCHAR(MAX) NULL,
-    [CreatedDate] DATETIME NOT NULL DEFAULT (GETDATE())
+    Id int IDENTITY(1,1) NOT NULL,
+    UserId int NULL,
+    TableName nvarchar(128) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
+    RecordId bigint NULL,
+    ActionType nvarchar(64) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
+    CreatedDate datetime DEFAULT getdate() NOT NULL,
+    CompanyId char(4) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
+    CompanyUserId nvarchar(64) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
+    Message nvarchar(MAX) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
+    CONSTRAINT PK__Audit__3214EC07AF57E021 PRIMARY KEY (Id)
   );
+  CREATE NONCLUSTERED INDEX IX_Audit_CompanyId ON ClientManagement.dbo.Audit (CompanyId);
+  CREATE NONCLUSTERED INDEX IX_Audit_CompanyUserId ON ClientManagement.dbo.Audit (CompanyUserId);
 END;

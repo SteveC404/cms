@@ -1,11 +1,19 @@
+// src/controllers/authController.js
+"use strict";
+
 const bcrypt = require("bcrypt");
-const mssql = require("mssql");
-const { query, getPool } = require("../config/db");
+const { query } = require("../config/db");
 const { logAudit } = require("../utils/audit");
 
-function normalizeBit(x) {
-  if (typeof x === "boolean") return x ? 1 : 0;
-  return x == null ? 0 : Number(x); // coerces "1"/1 → 1, "0"/0 → 0
+function wantsJson(req) {
+  const accept = (req.get("accept") || "").toLowerCase();
+  const xreq = (req.get("x-requested-with") || "").toLowerCase();
+  return (
+    accept.includes("application/json") ||
+    (req.is && req.is("application/json")) ||
+    xreq === "fetch" ||
+    xreq === "xmlhttprequest"
+  );
 }
 
 async function login(req, res) {
@@ -13,66 +21,80 @@ async function login(req, res) {
   if (!email || !password) {
     return res.status(400).json({ error: "Email and password required" });
   }
-  const result = await query`SELECT TOP 1 * FROM Users WHERE Email = ${email}`;
-  const user = result.recordset[0];
-  if (!user) return res.status(401).json({ error: "Invalid credentials" });
 
-  const stored = user.Password;
-  let ok = false;
-  try {
-    ok = await bcrypt.compare(password, stored);
-  } catch {}
-  if (!ok) {
-    // Fallback: allow plaintext match to support legacy DBs
-    if (password === stored) ok = true;
-  }
+  const rs = await query`SELECT TOP 1 * FROM Users WHERE Email = ${email}`;
+  if (!rs?.recordset?.length)
+    return res.status(401).json({ error: "Invalid credentials" });
+
+  const user = rs.recordset[0];
+  const ok =
+    typeof user.Password === "string" && user.Password.length
+      ? await bcrypt.compare(password, user.Password)
+      : false;
   if (!ok) return res.status(401).json({ error: "Invalid credentials" });
 
-  req.session.user = { id: user.Id, email: user.Email, name: user.FirstName };
-  await logAudit({
-    userId: user.Id,
-    tableName: "Users",
-    recordId: user.Id,
-    actionType: "LOGIN",
-    updatedValue: user.Email,
+  const id = user.Id;
+  const redirectTo =
+    (typeof req.body?.redirectTo === "string" && req.body.redirectTo) ||
+    (typeof req.query?.redirectTo === "string" && req.query.redirectTo) ||
+    "/home";
+
+  req.session.regenerate((err) => {
+    if (err) return res.status(500).json({ error: "Session error" });
+
+    // Store TENANT fields
+    req.session.user = {
+      id,
+      email: user.Email,
+      firstName: user.FirstName,
+      lastName: user.LastName,
+      tenantId: user.TenantId || null,
+      tenantUserId: user.TenantUserId || null,
+    };
+
+    logAudit({
+      userId: id,
+      tableName: "Auth",
+      actionType: "LOGIN",
+      updatedValue: { email: user.Email },
+      tenantId: user.TenantId || null,
+      tenantUserId: user.TenantUserId || null,
+    }).catch(() => {});
+
+    req.session.save(() => {
+      if (wantsJson(req))
+        return res.json({ ok: true, id, redirectUrl: redirectTo });
+      return res.redirect(303, redirectTo);
+    });
   });
-  return res.json({ ok: true });
 }
 
 async function logout(req, res) {
-  const id = req.session?.user?.id;
+  const id = req.session?.user?.id ?? null;
+  const tenantId = req.session?.user?.tenantId ?? null;
+  const tenantUserId = req.session?.user?.tenantUserId ?? null;
 
-  if (!id) return res.json({ ok: true });
+  // Include email in UpdatedValue (as you asked earlier)
+  let email = req.session?.user?.email ?? null;
+  if (!email && id) {
+    try {
+      const r2 = await query`SELECT TOP 1 Email FROM Users WHERE Id = ${id}`;
+      if (r2?.recordset?.length) email = r2.recordset[0].Email || null;
+    } catch {}
+  }
 
-  const pool = await getPool();
-  const result = await pool
-    .request()
-    .input("id", mssql.Int, id)
-    .query("SELECT FirstName, LastName, Email FROM Users WHERE Id = @id");
-  const u = result.recordset[0];
+  logAudit({
+    userId: id,
+    tableName: "Auth",
+    actionType: "LOGOUT",
+    updatedValue: { email: email || null },
+    tenantId,
+    tenantUserId,
+  }).catch(() => {});
 
-  const updatedValue = u
-    ? `FirstName=${u.FirstName}, LastName=${u.LastName}, Email=${u.Email}`
-    : "";
-
-  req.session.destroy(async () => {
-    await logAudit({
-      userId: id,
-      tableName: "Users",
-      recordId: id,
-      actionType: "LOGOUT",
-      updatedValue,
-    });
-    // If it's a regular page navigation (HTML), redirect to login.
-    // Otherwise (API/AJAX), return JSON.
-    if (
-      req.accepts("html") ||
-      req.method === "GET" ||
-      req.query.redirect === "1"
-    ) {
-      return res.redirect("/");
-    }
-    res.json({ ok: true, id });
+  req.session.destroy(() => {
+    if (wantsJson(req)) return res.json({ ok: true });
+    return res.redirect(303, "/login.html");
   });
 }
 

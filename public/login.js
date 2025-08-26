@@ -1,111 +1,112 @@
-// public/login.js
+// public/js/login.js
+(function () {
+  function $(sel, root = document) {
+    return root.querySelector(sel);
+  }
+  function text(v) {
+    return (v == null ? "" : String(v)).trim();
+  }
 
-document.addEventListener("DOMContentLoaded", () => {
-  const loginForm = document.getElementById("loginForm");
-  const loginError = document.getElementById("loginError");
-  const changePwForm = document.getElementById("changePasswordForm");
-  const changePwError = document.getElementById("changePasswordError");
-  const changePwModal = document.getElementById("changePasswordModal");
+  function findLoginForm() {
+    return (
+      $("#login-form") ||
+      $("form[data-login-form]") ||
+      $('form[action="/api/auth/login"]') ||
+      $('form[action$="/api/auth/login"]') ||
+      (/login/i.test(location.pathname) ? $("form") : null)
+    );
+  }
 
-  if (!loginForm) return;
+  async function handleSubmit(e) {
+    e.preventDefault();
+    const form = e.currentTarget;
 
-  let submitting = false;
+    const action = form.getAttribute("action") || "/api/auth/login";
+    const fd = new FormData(form);
 
-  loginForm.addEventListener("submit", async (e) => {
-    e.preventDefault(); // stop native /login post (fallback is still in HTML)
-    e.stopPropagation();
-    if (submitting) return;
-    submitting = true;
+    let email =
+      text(fd.get("email")) ||
+      text($('input[type="email"]', form)?.value) ||
+      text($('input[name="Email"]', form)?.value) ||
+      text($('input[name="username"]', form)?.value) ||
+      text($('input[name="user"]', form)?.value);
 
-    loginError.textContent = "";
-    const submitBtn = loginForm.querySelector('button[type="submit"]');
-    if (submitBtn) submitBtn.disabled = true;
+    let password =
+      fd.get("password") || $('input[type="password"]', form)?.value || "";
 
-    const email = (loginForm.email?.value || "").trim();
-    const password = loginForm.password?.value || "";
+    const redirectTo =
+      text(fd.get("redirectTo")) ||
+      form.getAttribute("data-redirect-to") ||
+      "/home";
+
+    if (!email || !password) {
+      showError(form, "Email and password are required.");
+      return;
+    }
 
     try {
-      const res = await fetch("/api/auth/login", {
+      const res = await fetch(action, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json", // <- ensures JSON response
+          "X-Requested-With": "fetch", // <- hint for the server
+        },
+        credentials: "include", // <- set/read session cookie
+        body: JSON.stringify({ email, password, redirectTo }),
+        redirect: "follow", // default; keeps res.redirected accurate
       });
 
-      // Tolerate different server response shapes ({ok:true} or {success:true} or {changePassword:true})
+      // If server issued a 30x and the browser followed it, use that final URL.
+      if (res.redirected && res.url) {
+        // Same-origin safety: if URL is absolute, browser will still navigate.
+        window.location.replace(res.url);
+        return;
+      }
+
+      if (!res.ok) {
+        const msg = await res.text().catch(() => "");
+        throw new Error(msg || `Login failed (${res.status})`);
+      }
+
+      // Prefer JSON {redirectUrl}; if body isn't JSON, we'll fall back.
       let data = {};
       try {
         data = await res.json();
       } catch {}
 
-      if (!res.ok) {
-        throw new Error(data.error || "Login failed");
-      }
+      const target =
+        (data && typeof data.redirectUrl === "string" && data.redirectUrl) ||
+        redirectTo ||
+        "/home";
 
-      if (data.changePassword) {
-        // Show modal & stash userId for the password change request
-        changePwModal.style.display = "flex";
-        const userIdInput = changePwForm.querySelector("[name=userId]");
-        if (userIdInput) userIdInput.value = data.userId ?? "";
-        return;
-      }
+      window.location.replace(target);
 
-      if (data.ok || data.success) {
-        window.location.href = "/home"; // or "/home.html" depending on your route
-        return;
-      }
-
-      throw new Error(data.error || "Login failed");
+      // Last-ditch fallback in case some CSP extension blocks replace():
+      setTimeout(() => {
+        if (location.pathname !== target) location.href = target;
+      }, 150);
     } catch (err) {
-      const now = new Date().toLocaleString();
-      loginError.style.color = "red";
-      loginError.textContent = `${now}: ${err.message || "Login failed"}`;
-    } finally {
-      submitting = false;
-      if (submitBtn) submitBtn.disabled = false;
+      console.error("[login] submit error:", err);
+      showError(form, "Invalid email or password.");
     }
-  });
-
-  // Change Password flow (uses refactored route: PATCH /api/users/:id/password)
-  if (changePwForm) {
-    changePwForm.addEventListener("submit", async (e) => {
-      e.preventDefault();
-      changePwError.textContent = "";
-
-      const userId = changePwForm.userId?.value;
-      const password = changePwForm.password?.value || "";
-      const password2 = changePwForm.password2?.value || "";
-
-      if (!userId) {
-        changePwError.textContent = "Missing user id.";
-        return;
-      }
-      if (!password || !password2) {
-        changePwError.textContent =
-          "Please enter and confirm the new password.";
-        return;
-      }
-
-      try {
-        const res = await fetch(
-          `/api/users/${encodeURIComponent(userId)}/password`,
-          {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ Password: password, Password2: password2 }),
-          },
-        );
-
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok || !data.success) {
-          throw new Error(data.error || "Password change failed");
-        }
-
-        // On success, hide modal and go to home
-        changePwModal.style.display = "none";
-        window.location.href = "/home";
-      } catch (err) {
-        changePwError.textContent = err.message || "Password change failed.";
-      }
-    });
   }
-});
+
+  function showError(form, msg) {
+    const el = $("#login-error") || $(".login-error") || $(".error");
+    if (el) el.textContent = msg;
+    else alert(msg);
+  }
+
+  function attach(form) {
+    if (form.__loginBound) return;
+    form.addEventListener("submit", handleSubmit);
+    form.__loginBound = true;
+  }
+
+  document.addEventListener("DOMContentLoaded", () => {
+    const form = findLoginForm();
+    if (!form) return; // quiet on non-login pages
+    attach(form);
+  });
+})();

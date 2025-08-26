@@ -6,17 +6,79 @@
     <link rel="stylesheet" href="style.css" />
   </head>
   <body>
-    <header>
-      <div id="userHeader"></div>
-    </header>
-    <main>
-      <div class="tabs">
-        <button class="tab" data-tab="clients">Clients</button>
-        <button class="tab" data-tab="users">Users</button>
+    <div id="app" class="layout">
+      <!-- Sidebar -->
+      <aside id="sidebar" class="sidebar" aria-label="Main">
+        <div class="sidebar-top">
+          <button
+            id="sidebarToggle"
+            class="icon-btn"
+            aria-label="Collapse sidebar"
+            title="Collapse"
+          >
+            <!-- double chevrons -->
+            <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                d="M13.3 7.3a1 1 0 0 1 1.4 1.4L11.4 12l3.3 3.3a1 1 0 1 1-1.4 1.4L9.6 12l3.7-4.7zM7.3 7.3a1 1 0 0 1 1.4 1.4L5.4 12l3.3 3.3a1 1 0 1 1-1.4 1.4L3.6 12l3.7-4.7z"
+              />
+            </svg>
+          </button>
+          <div class="brand" id="brandLabel">CMS</div>
+        </div>
+
+        <nav class="nav">
+          <!-- Clients -->
+          <button
+            type="button"
+            class="nav-item active"
+            data-tab="clients"
+            aria-current="page"
+          >
+            <span class="nav-icon" aria-hidden="true">
+              <!-- user-card icon -->
+              <svg width="20" height="20" viewBox="0 0 24 24">
+                <path
+                  d="M12 12a4 4 0 1 0-4-4 4 4 0 0 0 4 4Zm0 2c-4.4 0-8 2.2-8 5v1h16v-1c0-2.8-3.6-5-8-5Z"
+                />
+              </svg>
+            </span>
+            <span class="nav-label">Clients</span>
+          </button>
+
+          <!-- Users -->
+          <button type="button" class="nav-item" data-tab="users">
+            <span class="nav-icon" aria-hidden="true">
+              <!-- group/users icon -->
+              <svg width="20" height="20" viewBox="0 0 24 24">
+                <path
+                  d="M16 11a3 3 0 1 0-3-3 3 3 0 0 0 3 3Zm-8 0a3 3 0 1 0-3-3 3 3 0 0 0 3 3Zm0 2c-3.3 0-6 1.7-6 4v1h6v-1c0-1.5.7-2.8 1.8-3.7A8.4 8.4 0 0 0 8 13Zm8 0a6.5 6.5 0 0 0-2.1.4A4.6 4.6 0 0 1 16 18v1h6v-1c0-2.3-2.7-4-6-4Z"
+                />
+              </svg>
+            </span>
+            <span class="nav-label">Users</span>
+          </button>
+        </nav>
+      </aside>
+
+      <!-- Main content -->
+      <div id="main" class="main">
+        <header class="topbar">
+          <div class="topbar-left">
+            <!-- optional page title -->
+            <h1 id="pageTitle" class="page-title">Clients</h1>
+          </div>
+          <div class="topbar-right" id="userHeader"></div>
+        </header>
+
+        <section class="content">
+          <!-- Tabs removed; we drive via sidebar -->
+          <div id="tabContent"></div>
+        </section>
       </div>
-      <div id="tabContent"></div>
-    </main>
+    </div>
+
     <div id="detailsModal" class="modal" style="display: none"></div>
+
     <script src="home.js"></script>
   </body>
 </html>

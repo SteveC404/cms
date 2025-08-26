@@ -1,78 +1,84 @@
 // src/utils/audit.js
+"use strict";
+
 const { getPool } = require("../config/db");
 const mssql = require("mssql");
 const logger = require("../config/logger");
 
 /**
  * Persist an audit entry.
- * - Accepts either `recordId` or `entityId` (prefers recordId if both present).
- * - ExistingValue / UpdatedValue can be strings or plain objects (objects are JSON-stringified).
- * - RecordId is bound as BIGINT (pass number, string, or JS BigInt).
+ * - existingValue / updatedValue can be strings or objects; we stringify objects.
+ * - We DO NOT write Audit.ExistingValue or Audit.UpdatedValue columns anymore.
+ * - Message is stored as:
+ *      {
+ *        "ExistingValue": [ "<existingStr>" ] | null,
+ *        "UpdatedValue":  [ "<updatedStr>" ]  | null
+ *      }
  */
 async function logAudit({
   userId,
   tableName,
   actionType,
-  // id aliases:
-  recordId = null,
-  entityId = null,
-  // payloads:
-  existingValue = "",
-  updatedValue = "",
-  // optional explicit created date
-  createdDate = null,
+  existingValue,
+  updatedValue,
+  tenantId,
+  tenantUserId,
+  createdDate,
+  recordId,
+  entityId,
 }) {
-  // Prefer recordId; fall back to entityId
-  const targetId = recordId ?? entityId ?? null;
-
-  // Normalize ID for mssql.BigInt binding (string is safest for large values)
-  const recordIdParam =
-    targetId == null
-      ? null
-      : typeof targetId === "bigint"
-        ? targetId.toString()
-        : typeof targetId === "number"
-          ? String(targetId)
-          : String(targetId); // any other type -> toString
-
-  // Ensure values are strings (auto-JSONify objects)
-  const toStr = (v) =>
-    v == null
-      ? ""
-      : typeof v === "string"
-        ? v
-        : (() => {
-            try {
-              return JSON.stringify(v);
-            } catch {
-              return String(v);
-            }
-          })();
-
-  const existingStr = toStr(existingValue);
-  const updatedStr = toStr(updatedValue);
-
   try {
     const pool = await getPool();
+
+    // Normalize to strings (or null)
+    const existingStr =
+      existingValue == null
+        ? null
+        : typeof existingValue === "string"
+          ? existingValue
+          : JSON.stringify(existingValue);
+
+    const updatedStr =
+      updatedValue == null
+        ? null
+        : typeof updatedValue === "string"
+          ? updatedValue
+          : JSON.stringify(updatedValue);
+
+    // Nested message payload
+    const messageJson = JSON.stringify({
+      ExistingValue: existingStr == null ? null : [existingStr],
+      UpdatedValue: updatedStr == null ? null : [updatedStr],
+    });
+
+    // Note: We intentionally OMIT ExistingValue/UpdatedValue columns here.
     await pool
       .request()
-      .input("RecordId", mssql.BigInt, recordIdParam) // BIGINT column
-      .input("UserId", mssql.Int, userId ?? null) // adjust to BigInt if your Users.Id is BIGINT
-      .input("TableName", mssql.NVarChar(128), tableName ?? null)
-      .input("ActionType", mssql.NVarChar(64), actionType ?? null)
-      .input("ExistingValue", mssql.NVarChar(mssql.MAX), existingStr)
-      .input("UpdatedValue", mssql.NVarChar(mssql.MAX), updatedStr)
-      .input("CreatedDate", mssql.DateTime, createdDate || new Date()).query(`
+      .input("UserId", mssql.Int, userId ?? null)
+      .input("TableName", mssql.NVarChar, tableName ?? null)
+      .input("RecordId", mssql.BigInt, recordId ?? entityId ?? null)
+      .input("ActionType", mssql.NVarChar, actionType ?? null)
+      .input("TenantId", mssql.Char, tenantId ?? null)
+      .input("TenantUserId", mssql.NVarChar, tenantUserId ?? null)
+      .input("Message", mssql.NVarChar(mssql.MAX), messageJson)
+      .input("CreatedDate", mssql.DateTime, createdDate ?? new Date()).query(`
         INSERT INTO Audit (
-          UserId, TableName, RecordId, ActionType, ExistingValue, UpdatedValue, CreatedDate
+          UserId, TableName, RecordId, ActionType,
+          TenantId, TenantUserId,
+          Message,
+          CreatedDate
         )
         VALUES (
-          @UserId, @TableName, @RecordId, @ActionType, @ExistingValue, @UpdatedValue, @CreatedDate
+          @UserId, @TableName, @RecordId, @ActionType,
+          @TenantId, @TenantUserId,
+          @Message,
+          @CreatedDate
         )
       `);
   } catch (err) {
-    // Don't break the user flow if audit fails—just log it.
-    logger.error("Audit log failure", err);
+    try {
+      logger.error("Audit log failure", err);
+    } catch {}
   }
 }
 
