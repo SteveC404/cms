@@ -1,112 +1,135 @@
-// public/js/login.js
+// public/login.js (success redirect tuned for /home)
 (function () {
-  function $(sel, root = document) {
-    return root.querySelector(sel);
+  function $(sel, root) {
+    return (root || document).querySelector(sel);
   }
   function text(v) {
     return (v == null ? "" : String(v)).trim();
   }
 
-  function findLoginForm() {
-    return (
-      $("#login-form") ||
-      $("form[data-login-form]") ||
-      $('form[action="/api/auth/login"]') ||
-      $('form[action$="/api/auth/login"]') ||
-      (/login/i.test(location.pathname) ? $("form") : null)
-    );
+  function showError(msg) {
+    var box = $("#loginError") || $(".login-error") || $(".error");
+    if (!box) {
+      alert(msg);
+      return;
+    }
+    box.textContent = msg || "Login failed";
+    box.style.display = "";
+    box.style.color = "red";
+    box.style.fontWeight = "600";
+    box.setAttribute("role", "alert");
+    box.setAttribute("aria-live", "polite");
+  }
+
+  function clearError() {
+    var box = $("#loginError") || $(".login-error") || $(".error");
+    if (!box) return;
+    box.textContent = "";
+    box.style.display = "none";
+  }
+
+  function isLoginUrl(u) {
+    try {
+      var url = new URL(u, window.location.origin);
+      return url.pathname.indexOf("/login") !== -1;
+    } catch {
+      return false;
+    }
   }
 
   async function handleSubmit(e) {
     e.preventDefault();
     const form = e.currentTarget;
+    const action = form.getAttribute("action") || "/login?redirect=1";
 
-    const action = form.getAttribute("action") || "/api/auth/login";
-    const fd = new FormData(form);
+    const email = text(
+      $("#email", form)?.value || $('input[name="email"]', form)?.value,
+    );
+    const password = text(
+      $("#password", form)?.value || $('input[name="password"]', form)?.value,
+    );
 
-    let email =
-      text(fd.get("email")) ||
-      text($('input[type="email"]', form)?.value) ||
-      text($('input[name="Email"]', form)?.value) ||
-      text($('input[name="username"]', form)?.value) ||
-      text($('input[name="user"]', form)?.value);
-
-    let password =
-      fd.get("password") || $('input[type="password"]', form)?.value || "";
-
-    const redirectTo =
-      text(fd.get("redirectTo")) ||
-      form.getAttribute("data-redirect-to") ||
-      "/home";
+    clearError();
 
     if (!email || !password) {
-      showError(form, "Email and password are required.");
+      showError("Email and password required");
+      ($("#email", form) && !email
+        ? $("#email", form)
+        : $("#password", form)
+      )?.focus();
       return;
     }
+
+    const body = new URLSearchParams();
+    body.set("email", email);
+    body.set("password", password);
 
     try {
       const res = await fetch(action, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json", // <- ensures JSON response
-          "X-Requested-With": "fetch", // <- hint for the server
-        },
-        credentials: "include", // <- set/read session cookie
-        body: JSON.stringify({ email, password, redirectTo }),
-        redirect: "follow", // default; keeps res.redirected accurate
+        headers: { Accept: "application/json" },
+        credentials: "same-origin",
+        body,
       });
 
-      // If server issued a 30x and the browser followed it, use that final URL.
-      if (res.redirected && res.url) {
-        // Same-origin safety: if URL is absolute, browser will still navigate.
-        window.location.replace(res.url);
+      if (res.ok) {
+        // 1) If server gave JSON with redirectTo/next, use that
+        const ct = res.headers.get("content-type") || "";
+        if (ct.includes("application/json")) {
+          const data = await res.json().catch(() => null);
+          const next = (data && (data.redirectTo || data.next)) || "/home";
+          window.location.assign(next);
+          return;
+        }
+
+        // 2) If fetch followed a redirect, prefer the final URL
+        if (res.redirected && res.url && !isLoginUrl(res.url)) {
+          window.location.assign(res.url);
+          return;
+        }
+
+        // 3) If final response URL isn't the login page, use it
+        if (res.url && !isLoginUrl(res.url)) {
+          window.location.assign(res.url);
+          return;
+        }
+
+        // 4) Fallback: go to /home
+        window.location.assign("/home");
         return;
       }
 
-      if (!res.ok) {
-        const msg = await res.text().catch(() => "");
-        throw new Error(msg || `Login failed (${res.status})`);
+      // Error: show server message
+      const ct = res.headers.get("content-type") || "";
+      if (ct.includes("application/json")) {
+        const data = await res.json().catch(() => null);
+        const msg = (data && (data.error || data.message)) || "Login failed";
+        showError(msg);
+        return;
+      } else {
+        const txt = await res.text().catch(() => "");
+        try {
+          const data = JSON.parse(txt);
+          const msg = (data && (data.error || data.message)) || "Login failed";
+          showError(msg);
+        } catch {
+          showError(txt || "Login failed");
+        }
+        return;
       }
-
-      // Prefer JSON {redirectUrl}; if body isn't JSON, we'll fall back.
-      let data = {};
-      try {
-        data = await res.json();
-      } catch {}
-
-      const target =
-        (data && typeof data.redirectUrl === "string" && data.redirectUrl) ||
-        redirectTo ||
-        "/home";
-
-      window.location.replace(target);
-
-      // Last-ditch fallback in case some CSP extension blocks replace():
-      setTimeout(() => {
-        if (location.pathname !== target) location.href = target;
-      }, 150);
     } catch (err) {
-      console.error("[login] submit error:", err);
-      showError(form, "Invalid email or password.");
+      console.error("[login] submit error", err);
+      showError("Network error. Please try again.");
     }
   }
 
-  function showError(form, msg) {
-    const el = $("#login-error") || $(".login-error") || $(".error");
-    if (el) el.textContent = msg;
-    else alert(msg);
-  }
-
-  function attach(form) {
-    if (form.__loginBound) return;
-    form.addEventListener("submit", handleSubmit);
-    form.__loginBound = true;
-  }
-
-  document.addEventListener("DOMContentLoaded", () => {
-    const form = findLoginForm();
-    if (!form) return; // quiet on non-login pages
-    attach(form);
+  document.addEventListener("DOMContentLoaded", function () {
+    const form =
+      $("#loginForm") || $("#login-form") || document.querySelector("form");
+    if (!form) return;
+    if (!form.__bound) {
+      form.addEventListener("submit", handleSubmit);
+      form.__bound = true;
+    }
   });
 })();

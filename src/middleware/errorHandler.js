@@ -23,7 +23,7 @@ function notFound(req, res, _next) {
   logAudit({
     userId: req.session?.user?.id ?? null,
     tableName: "HTTP",
-    // If your audit util uses "entityId" or "recordId", pass null here
+    // If your audit util uses "entityId" pass null here
     actionType: "ERROR",
     updatedValue: JSON.stringify(payload),
   }).catch(() => {});
