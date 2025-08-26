@@ -35,7 +35,7 @@ header {
   color: #fff;
   padding: 12px;
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-end; /* pushes items to the right */
   align-items: center;
 }
 .tabs {
@@ -146,4 +146,79 @@ header {
 /* If your table has zebra striping, ensure it doesn't affect the first cell */
 .list-table tr:nth-child(even) td:first-child {
   background: #fff;
+}
+
+/* Header user menu */
+.user-menu {
+  position: relative;
+  display: inline-block;
+}
+
+.user-trigger {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.user-trigger .avatar {
+  display: block;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+}
+
+.user-dropdown {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.12);
+  min-width: 160px;
+  padding: 6px;
+  display: none; /* hidden by default */
+  z-index: 1000;
+}
+
+.user-dropdown.open {
+  display: block;
+}
+
+.user-dropdown .menu-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  padding: 8px 10px;
+  border-radius: 6px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.user-dropdown .menu-item:hover,
+.user-dropdown .menu-item:focus {
+  background: #f3f4f6;
+  outline: none;
+}
+
+.user-dropdown .menu-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font:
+    14px/1.4 "Segoe UI",
+    Arial,
+    sans-serif; /* ensure visible font */
+  color: #111; /* force black text */
+  cursor: pointer;
 }

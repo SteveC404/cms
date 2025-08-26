@@ -1,23 +1,22 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
+  <head>
+    <meta charset="UTF-8" />
     <title>Home - Client Management System</title>
-    <link rel="stylesheet" href="style.css">
-</head>
-<body>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
     <header>
-        <div id="userHeader"></div>
-        <a href="/logout">Logout</a>
+      <div id="userHeader"></div>
     </header>
     <main>
-        <div class="tabs">
-            <button class="tab" data-tab="clients">Clients</button>
-            <button class="tab" data-tab="users">Users</button>
-        </div>
-        <div id="tabContent"></div>
+      <div class="tabs">
+        <button class="tab" data-tab="clients">Clients</button>
+        <button class="tab" data-tab="users">Users</button>
+      </div>
+      <div id="tabContent"></div>
     </main>
-    <div id="detailsModal" class="modal" style="display:none;"></div>
+    <div id="detailsModal" class="modal" style="display: none"></div>
     <script src="home.js"></script>
-</body>
+  </body>
 </html>

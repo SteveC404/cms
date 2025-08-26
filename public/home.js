@@ -37,15 +37,91 @@ function renderAvatar(user) {
   return `<div class="avatar" style="background:#888;">${initials || "?"}</div>`;
 }
 
+async function doLogout() {
+  try {
+    await fetch("/api/auth/logout", { method: "POST" });
+  } catch (_) {
+    /* ignore network errors—still go back to login */
+  }
+  window.location.href = "/";
+}
+
 async function renderHeader() {
   try {
     const user = await getProfile();
-    $("#userHeader").innerHTML =
-      `<a href="#" id="profileLink">${renderAvatar(user)} ${user.FirstName ?? ""} ${user.LastName ?? ""}</a>`;
-    // CSP-safe: wire via JS
-    $("#profileLink").addEventListener("click", (e) => {
+
+    // avatar-only trigger (no first/last name text)
+    $("#userHeader").innerHTML = `
+      <div class="user-menu" id="userMenu">
+        <button type="button" class="user-trigger" id="userTrigger" aria-haspopup="true" aria-expanded="false" title="Account">
+          ${renderAvatar(user)}
+        </button>
+        <div class="user-dropdown" id="userDropdown" role="menu" aria-label="Account menu">
+          <button type="button" class="menu-item" data-action="edit-self">Edit</button>
+          <button type="button" class="menu-item" data-action="logout">Logout</button>
+        </div>
+      </div>
+    `;
+
+    const wrapper = $("#userMenu");
+    const trigger = $("#userTrigger");
+    const dropdown = $("#userDropdown");
+
+    let closeTimer = null;
+
+    const openMenu = () => {
+      clearTimeout(closeTimer);
+      dropdown.classList.add("open");
+      trigger.setAttribute("aria-expanded", "true");
+    };
+    const closeMenu = () => {
+      dropdown.classList.remove("open");
+      trigger.setAttribute("aria-expanded", "false");
+    };
+
+    // Start a delayed close when leaving
+    const startCloseTimer = () => {
+      clearTimeout(closeTimer);
+      closeTimer = setTimeout(closeMenu, 1000); // <-- 1 second delay
+    };
+
+    // Cancel delayed close if entering again
+    const cancelCloseTimer = () => {
+      clearTimeout(closeTimer);
+    };
+
+    // open on hover
+    wrapper.addEventListener("mouseenter", () => {
+      cancelCloseTimer();
+      openMenu();
+    });
+    wrapper.addEventListener("mouseleave", startCloseTimer);
+
+    dropdown.addEventListener("mouseenter", cancelCloseTimer);
+    dropdown.addEventListener("mouseleave", startCloseTimer);
+
+    // toggle on click (mobile/keyboard friendly)
+    trigger.addEventListener("click", (e) => {
       e.preventDefault();
-      showDetailsModal("users", user.Id);
+      dropdown.classList.contains("open") ? closeMenu() : openMenu();
+    });
+
+    // close when clicking away
+    document.addEventListener("click", (e) => {
+      if (!wrapper.contains(e.target)) closeMenu();
+    });
+
+    // menu item actions
+    dropdown.addEventListener("click", (e) => {
+      const btn = e.target.closest(".menu-item");
+      if (!btn) return;
+      const action = btn.dataset.action;
+      if (action === "edit-self") {
+        showDetailsModal("users", user.Id);
+      } else if (action === "logout") {
+        doLogout();
+      }
+      closeMenu();
     });
   } catch (err) {
     console.error("Header render failed:", err);
