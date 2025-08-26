@@ -1,3 +1,16 @@
+# Dependencies
+node_modules/
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+# Env
 .env
-node_modules
-uploads/4c6144b9173db49d27dbd1459cfa7c89
+# Builds
+dist/
+coverage/
+# Uploads
+uploads/
+.prettierrc

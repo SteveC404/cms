@@ -105,3 +105,45 @@ header {
   font-size: 1.5em;
   font-weight: bold;
 }
+
+/* Keep the first column (edit icon) white and narrow */
+.list-table th:first-child,
+.list-table td:first-child {
+  background: #fff; /* override any row striping */
+  width: 40px; /* just enough for the icon */
+  min-width: 40px;
+  text-align: center;
+  padding: 6px 4px; /* tighter padding */
+}
+
+/* Remove default blue button styling on the icon button */
+.list-table .edit-icon {
+  background: transparent; /* no blue background */
+  border: 0; /* no border */
+  padding: 0; /* no extra space */
+  margin: 0;
+  font: inherit; /* inherit table font */
+  line-height: 1;
+  cursor: pointer;
+}
+
+/* Optional: tidy the icon appearance */
+.list-table .edit-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px; /* match the glyph size you like */
+  height: 20px;
+}
+
+/* Accessible focus ring (instead of the default blue fill) */
+.list-table .edit-icon:focus-visible {
+  outline: 2px solid #2684ff;
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+/* If your table has zebra striping, ensure it doesn't affect the first cell */
+.list-table tr:nth-child(even) td:first-child {
+  background: #fff;
+}

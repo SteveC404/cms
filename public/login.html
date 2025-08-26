@@ -1,32 +1,85 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
+  <head>
+    <meta charset="UTF-8" />
     <title>Login - Client Management System</title>
-    <link rel="stylesheet" href="style.css">
-</head>
-<body>
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <link rel="stylesheet" href="/style.css" />
+    <!-- Optional: favicon; remove if you don't have one -->
+    <link rel="icon" href="/favicon.ico" />
+  </head>
+  <body>
     <div class="login-container">
-        <h2>Login</h2>
-        <form id="loginForm">
-            <input type="email" name="email" placeholder="Email" required><br>
-            <input type="password" name="password" placeholder="Password" required><br>
-            <button type="submit">Login</button>
-        </form>
-        <div id="loginError" class="error"></div>
-    </div>
-    <div id="changePasswordModal" class="modal" style="display:none;">
-        <div class="modal-content">
-            <h3>Set New Password</h3>
-            <form id="changePasswordForm">
-                <input type="password" name="password" placeholder="New Password" required><br>
-                <input type="password" name="password2" placeholder="Repeat Password" required><br>
-                <input type="hidden" name="userId">
-                <button type="submit">Save</button>
-            </form>
-            <div id="changePasswordError" class="error"></div>
+      <h2>Login</h2>
+
+      <!--
+        Fallback (no-JS) submits to /login?redirect=1 so the server can redirect to /home on success.
+        With JS enabled, login.js will intercept this submit and call /api/auth/login instead.
+      -->
+      <form id="loginForm" action="/login?redirect=1" method="post" novalidate>
+        <label for="email" class="sr-only">Email</label>
+        <input
+          id="email"
+          type="email"
+          name="email"
+          placeholder="Email"
+          autocomplete="username email"
+          required
+        /><br />
+
+        <label for="password" class="sr-only">Password</label>
+        <input
+          id="password"
+          type="password"
+          name="password"
+          placeholder="Password"
+          autocomplete="current-password"
+          required
+        /><br />
+
+        <button type="submit">Login</button>
+      </form>
+
+      <div id="loginError" class="error" role="alert" aria-live="polite"></div>
+
+      <!-- No-JS notice (optional) -->
+      <noscript>
+        <div class="info">
+          JavaScript is disabled—submitting the form will log you in via the
+          non-JS route and then redirect to the home page.
         </div>
+      </noscript>
     </div>
-    <script src="login.js"></script>
-</body>
+
+    <!-- Change Password Modal (unchanged) -->
+    <div id="changePasswordModal" class="modal" style="display: none">
+      <div class="modal-content">
+        <h3>Set New Password</h3>
+        <form id="changePasswordForm">
+          <input
+            type="password"
+            name="password"
+            placeholder="New Password"
+            required
+          /><br />
+          <input
+            type="password"
+            name="password2"
+            placeholder="Repeat Password"
+            required
+          /><br />
+          <input type="hidden" name="userId" />
+          <button type="submit">Save</button>
+        </form>
+        <div
+          id="changePasswordError"
+          class="error"
+          role="alert"
+          aria-live="polite"
+        ></div>
+      </div>
+    </div>
+
+    <script src="/login.js" defer></script>
+  </body>
 </html>
