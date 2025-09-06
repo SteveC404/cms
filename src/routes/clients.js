@@ -64,9 +64,10 @@ const storage = multer.diskStorage({
     if (!tenantId) {
       return cb(new Error("TenantId is required for uploads"));
     }
-    const tenantDir = path.join(uploadsAbs, tenantId);
-    if (!fs.existsSync(tenantDir)) fs.mkdirSync(tenantDir, { recursive: true });
-    cb(null, tenantDir);
+    const profilePhotosDir = path.join(uploadsAbs, tenantId, "profilePhotos");
+    if (!fs.existsSync(profilePhotosDir))
+      fs.mkdirSync(profilePhotosDir, { recursive: true });
+    cb(null, profilePhotosDir);
   },
   filename: (_req, file, cb) => {
     const ext = path.extname(file.originalname || "").toLowerCase();

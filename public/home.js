@@ -29,8 +29,8 @@ function renderAvatar(user) {
   if (user && user.Photo) {
     const tenantId = user.TenantId || user.tenantId;
     const photoPath = tenantId
-      ? `/uploads/${tenantId}/${user.Photo}`
-      : `/uploads/${user.Photo}`;
+      ? `/uploads/${tenantId}/profilePhotos/${user.Photo}`
+      : `/uploads/profilePhotos/${user.Photo}`;
     return `<img src="${photoPath}" class="avatar" alt="photo">`;
   }
   const fn = (user?.FirstName || "").trim();
@@ -234,8 +234,8 @@ async function showDetailsModal(type, id) {
   if (data.Photo) {
     const tenantId = data.TenantId || data.tenantId;
     const photoPath = tenantId
-      ? `/uploads/${tenantId}/${data.Photo}`
-      : `/uploads/${data.Photo}`;
+      ? `/uploads/${tenantId}/profilePhotos/${data.Photo}`
+      : `/uploads/profilePhotos/${data.Photo}`;
     thumbHtml = `<div style='text-align:center;margin-bottom:12px;'>
       <img id='photoThumb' src='${photoPath}' alt='photo'
            style='width:64px;height:64px;border-radius:50%;object-fit:cover;border:2px solid #ccc;cursor:pointer;' title='Change photo'>
