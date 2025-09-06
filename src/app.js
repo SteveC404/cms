@@ -79,6 +79,9 @@ app.use("/api", require("./routes"));
 const clientsRouter = require("./routes/clients"); // keep if you expose a dedicated clients router
 app.use("/api/clients", clientsRouter);
 
+const tenantsRouter = require("./routes/tenants");
+app.use("/api/tenants", tenantsRouter);
+
 // ---------- Error handling pipeline ----------
 app.use(notFound); // turns unmatched routes into a 404 error
 app.use(errorAudit()); // audits errors with TenantId/TenantUserId when available
