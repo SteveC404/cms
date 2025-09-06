@@ -62,6 +62,8 @@ async function getClient(req, res) {
     .query(`SELECT * FROM Clients WHERE Id=@Id AND TenantId=@TenantId`);
   const row = rs.recordset[0];
   if (!row) return res.status(404).json({ error: "Client not found" });
+  // Ensure TenantId is present in response
+  if (!row.TenantId && row.tenantId) row.TenantId = row.tenantId;
   res.json(row);
 }
 
@@ -90,7 +92,8 @@ async function createClient(req, res) {
 
   const activeBit = bitFrom(req.body?.Active ?? req.body?.active ?? null);
   const dob = dateOrNull(DateOfBirth);
-  const photoPath = req.file ? `/uploads/${req.file.filename}` : null;
+  // Use existing tenantId variable if already declared above
+  const photoPath = req.file && tenantId ? req.file.filename : null;
   const hash = Password ? await bcrypt.hash(Password, 10) : null;
 
   const ins = await pool
@@ -191,7 +194,8 @@ async function updateClient(req, res) {
     ? dateOrNull(req.body.DateOfBirth ?? req.body.dateOfBirth)
     : null;
 
-  const photoPath = req.file ? `/uploads/${req.file.filename}` : null;
+  // Use existing tenantId variable if already declared above
+  const photoPath = req.file && tenantId ? req.file.filename : null;
   const hash = Password ? await bcrypt.hash(Password, 10) : null;
 
   // diffs

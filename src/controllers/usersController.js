@@ -53,6 +53,8 @@ async function getUser(req, res) {
 
   const row = rs.recordset[0];
   if (!row) return res.status(404).json({ error: "User not found" });
+  // Ensure TenantId is present in response
+  if (!row.TenantId && row.tenantId) row.TenantId = row.tenantId;
   res.json(row);
 }
 
@@ -80,9 +82,9 @@ async function createUser(req, res) {
         ? req.body.active
         : 0,
   );
-  const photoPath = req.file
-    ? `/uploads/${req.file.filename}`
-    : PhotoBody || null;
+  // Use existing tenantId variable if already declared above
+  const photoPath =
+    req.file && tenantId ? req.file.filename : PhotoBody || null;
   const hash = Password ? await bcrypt.hash(Password, 10) : null;
 
   const ins = await pool
@@ -164,11 +166,13 @@ async function updateUser(req, res) {
   const activeBit = hasActive
     ? bitFrom(req.body.Active ?? req.body.active)
     : null;
-  const photoPath = req.file
-    ? `/uploads/${req.file.filename}`
-    : hasOwn(req.body, "Photo")
-      ? PhotoBody || null
-      : null;
+  // Use existing tenantId variable if already declared above
+  const photoPath =
+    req.file && tenantId
+      ? req.file.filename
+      : hasOwn(req.body, "Photo")
+        ? PhotoBody || null
+        : null;
   const hash = Password ? await bcrypt.hash(Password, 10) : null;
 
   // compute diffs

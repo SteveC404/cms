@@ -27,7 +27,11 @@ async function getProfile() {
 
 function renderAvatar(user) {
   if (user && user.Photo) {
-    return `<img src="/uploads/${user.Photo}" class="avatar" alt="photo">`;
+    const tenantId = user.TenantId || user.tenantId;
+    const photoPath = tenantId
+      ? `/uploads/${tenantId}/${user.Photo}`
+      : `/uploads/${user.Photo}`;
+    return `<img src="${photoPath}" class="avatar" alt="photo">`;
   }
   const fn = (user?.FirstName || "").trim();
   const ln = (user?.LastName || "").trim();
@@ -228,8 +232,12 @@ async function showDetailsModal(type, id) {
     initials = (data.FirstName[0] + data.LastName[0]).toUpperCase();
   let thumbHtml = "";
   if (data.Photo) {
+    const tenantId = data.TenantId || data.tenantId;
+    const photoPath = tenantId
+      ? `/uploads/${tenantId}/${data.Photo}`
+      : `/uploads/${data.Photo}`;
     thumbHtml = `<div style='text-align:center;margin-bottom:12px;'>
-      <img id='photoThumb' src='/uploads/${data.Photo}' alt='photo'
+      <img id='photoThumb' src='${photoPath}' alt='photo'
            style='width:64px;height:64px;border-radius:50%;object-fit:cover;border:2px solid #ccc;cursor:pointer;' title='Change photo'>
     </div>`;
   } else {

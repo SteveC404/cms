@@ -14,7 +14,7 @@ async function getProfile(req, res) {
   const pool = await getPool();
   const result = await // select fields your home.js uses; Photo is optional
   pool.request().input("email", mssql.NVarChar, email).query(`
-      SELECT TOP 1 Id, FirstName, LastName, Email, Active, Photo
+      SELECT TOP 1 Id, FirstName, LastName, Email, Active, Photo, TenantId
       FROM Users
       WHERE Email = @email
     `);
